@@ -147,6 +147,15 @@ function App() {
   },[active]);
 
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInputRef.current?.focus(); }
+      if (event.key === 'Escape') { setActive(null); setTrailerOpen(false); setMobileOpen(false); }
+    };
+    window.addEventListener('keydown',onKey);
+    return () => window.removeEventListener('keydown',onKey);
+  },[]);
+
+  useEffect(() => {
     if (!toast) return;
     const id = window.setTimeout(() => setToast(''),2200);
     return () => window.clearTimeout(id);
