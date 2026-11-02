@@ -1,83 +1,269 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Play, Plus, Check, ChevronLeft, ChevronRight, Sparkles, Film, Tv, X, Menu, Clapperboard, Star, Info, Bookmark, Compass, SlidersHorizontal, ArrowUpRight, CalendarDays, Flame, CirclePlay } from 'lucide-react';
+import {
+  ArrowDown, ArrowLeft, ArrowRight, Bookmark, Check, ChevronDown, ChevronLeft,
+  ChevronRight, Clapperboard, Compass, Film, Filter, Flame, Grid2X2, Heart,
+  Info, Menu, Play, Plus, Search, SlidersHorizontal, Sparkles, Star, Tv, X
+} from 'lucide-react';
 import { discover, poster, type Media } from './api';
 
-type Section = { title:string; subtitle:string; path:string; kind?:'movie'|'tv'|'all' };
-type Detail = Media & { tagline?:string; runtime?:number; episode_run_time?:number[]; genres?:{id:number;name:string}[]; videos?:{results?:{key:string;site:string;type:string;official?:boolean}[]} };
-const sections:Section[]=[
- {title:'Trending right now',subtitle:'The titles everyone is talking about',path:'trending/all/week',kind:'all'},
- {title:'Popular movies',subtitle:'Big stories. Unforgettable moments.',path:'movie/popular',kind:'movie'},
- {title:'Binge-worthy series',subtitle:'Your next can’t-stop-watching series',path:'tv/popular',kind:'tv'},
- {title:'Top rated films',subtitle:'Audience favourites worth your time',path:'movie/top_rated',kind:'movie'},
- {title:'Coming soon',subtitle:'Stories arriving on the big screen',path:'movie/upcoming',kind:'movie'},
- {title:'Top rated series',subtitle:'Outstanding shows, episode after episode',path:'tv/top_rated',kind:'tv'}
+type Kind = 'movie' | 'tv' | 'all';
+type Page = 'home' | 'movies' | 'series' | 'watchlist';
+type Detail = Media & {
+  tagline?: string;
+  runtime?: number;
+  episode_run_time?: number[];
+  genres?: { id: number; name: string }[];
+  videos?: { results?: { key: string; site: string; type: string; official?: boolean }[] };
+  recommendations?: { results?: Media[] };
+  credits?: { cast?: { id: number; name: string; character: string; profile_path: string | null }[] };
+};
+type Genre = { id: number; name: string };
+const IMG = 'https://image.tmdb.org/t/p/';
+const movieGenres: Genre[] = [
+  {id:28,name:'Action'},{id:12,name:'Adventure'},{id:16,name:'Animation'},{id:35,name:'Comedy'},
+  {id:80,name:'Crime'},{id:99,name:'Documentary'},{id:18,name:'Drama'},{id:14,name:'Fantasy'},
+  {id:27,name:'Horror'},{id:9648,name:'Mystery'},{id:10749,name:'Romance'},
+  {id:878,name:'Sci-Fi'},{id:53,name:'Thriller'}
 ];
-const genres=['All','Action','Adventure','Animation','Comedy','Crime','Documentary','Drama','Family','Fantasy','Horror','Mystery','Romance','Science Fiction','Thriller'];
-const genreIds:Record<string,number>={Action:28,Adventure:12,Animation:16,Comedy:35,Crime:80,Documentary:99,Drama:18,Family:10751,Fantasy:14,Horror:27,Mystery:9648,Romance:10749,'Science Fiction':878,Thriller:53};
-const titleOf=(m:Media)=>m.title||m.name||'Untitled';
-const yearOf=(m:Media)=>(m.release_date||m.first_air_date||'').slice(0,4);
-const kindOf=(m:Media)=>m.media_type||(m.name?'tv':'movie');
-const ratingOf=(m:Media)=>Number(m.vote_average||0).toFixed(1);
-const readSaved=():Media[]=>{try{const value=JSON.parse(localStorage.getItem('movclip-watchlist')||'[]');return Array.isArray(value)?value:[]}catch{return[]}};
-function App(){
- const [rows,setRows]=useState<Record<string,Media[]>>({});
- const [heroList,setHeroList]=useState<Media[]>([]);
- const [heroIndex,setHeroIndex]=useState(0);
- const [loading,setLoading]=useState(true);
- const [error,setError]=useState('');
- const [query,setQuery]=useState('');
- const [results,setResults]=useState<Media[]>([]);
- const [genre,setGenre]=useState('All');
- const [genreItems,setGenreItems]=useState<Media[]>([]);
- const [active,setActive]=useState<Media|null>(null);
- const [detail,setDetail]=useState<Detail|null>(null);
- const [saved,setSaved]=useState<Media[]>(readSaved);
- const [mobile,setMobile]=useState(false);
- const [page,setPage]=useState<'home'|'movies'|'series'|'mylist'>('home');
- const [trailerOpen,setTrailerOpen]=useState(false);
- const rowRefs=useRef<Record<string,HTMLDivElement|null>>({});
- const hero=heroList[heroIndex]||null;
- useEffect(()=>{let live=true;Promise.all(sections.map(async s=>{const d=await discover(s.path);return[s.path,(d.results||[]) as Media[]] as const})).then(entries=>{if(!live)return;const data=Object.fromEntries(entries);setRows(data);const picks=(data['trending/all/week']||[]).filter((m:Media)=>m.backdrop_path&&m.overview);setHeroList(picks.slice(0,8));setError('')}).catch(e=>live&&setError(e.message||'We could not load TMDB titles.')).finally(()=>live&&setLoading(false));return()=>{live=false}},[]);
- useEffect(()=>{localStorage.setItem('movclip-watchlist',JSON.stringify(saved))},[saved]);
- useEffect(()=>{if(heroList.length<2)return;const id=window.setInterval(()=>setHeroIndex(i=>(i+1)%heroList.length),9000);return()=>window.clearInterval(id)},[heroList.length]);
- useEffect(()=>{let live=true;const timer=window.setTimeout(()=>{if(query.trim().length<2){setResults([]);return}discover('search/multi','&query='+encodeURIComponent(query.trim())).then(d=>live&&setResults((d.results||[]).filter((m:Media)=>m.poster_path&&(m.media_type==='movie'||m.media_type==='tv')))).catch(()=>live&&setResults([]))},320);return()=>{live=false;window.clearTimeout(timer)}},[query]);
- useEffect(()=>{let live=true;if(genre==='All'){setGenreItems([]);return()=>{live=false}}discover('discover/movie','&with_genres='+genreIds[genre]+'&sort_by=popularity.desc').then(d=>live&&setGenreItems(d.results||[])).catch(()=>live&&setGenreItems([]));return()=>{live=false}},[genre]);
- useEffect(()=>{let live=true;setDetail(null);setTrailerOpen(false);if(!active)return;const type=kindOf(active);Promise.all([discover(type+'/'+active.id),discover(type+'/'+active.id+'/videos')]).then(([d,v])=>{if(live)setDetail({...active,...d,videos:v})}).catch(()=>live&&setDetail(active));return()=>{live=false}},[active]);
- const toggleSave=(m:Media)=>setSaved(list=>list.some(x=>x.id===m.id)?list.filter(x=>x.id!==m.id):[m,...list]);
- const isSaved=(m:Media)=>saved.some(x=>x.id===m.id);
- const open=(m:Media)=>{setActive(m);setQuery('')};
- const jump=(id:string)=>rowRefs.current[id]?.scrollBy({left:Math.max(260,rowRefs.current[id]?.clientWidth*.8||500),behavior:'smooth'});
- const filteredByPage=useMemo(()=>{if(page==='movies')return rows['movie/popular']||[];if(page==='series')return rows['tv/popular']||[];return[]},[page,rows]);
- const searchMode=query.trim().length>=2;
- const heroImage=hero?.backdrop_path?poster(hero.backdrop_path,'original'):'';
- const trailer=detail?.videos?.results?.find(v=>v.site==='YouTube'&&v.type==='Trailer')||detail?.videos?.results?.find(v=>v.site==='YouTube'&&v.type==='Teaser');
- return <div className="app-shell">
-  <header className="topbar"><a className="brand" href="#" onClick={()=>{setPage('home');setQuery('')}}><span className="brand-symbol"><Clapperboard size={19}/></span><span>movclip</span><i>.</i></a>
-   <nav className={mobile?'nav-links open':'nav-links'}><button className={page==='home'?'nav-active':''} onClick={()=>{setPage('home');setQuery('');setMobile(false)}}>Discover</button><button className={page==='movies'?'nav-active':''} onClick={()=>{setPage('movies');setQuery('');setMobile(false)}}>Movies</button><button className={page==='series'?'nav-active':''} onClick={()=>{setPage('series');setQuery('');setMobile(false)}}>Series</button><button className={page==='mylist'?'nav-active':''} onClick={()=>{setPage('mylist');setQuery('');setMobile(false)}}>My watchlist <span className="nav-count">{saved.length}</span></button></nav>
-   <div className="top-actions"><label className="searchbox"><Search size={16}/><input value={query} onChange={e=>{setQuery(e.target.value);setPage('home')}} placeholder="Search movies, series..." aria-label="Search titles"/>{query&&<button onClick={()=>setQuery('')} aria-label="Clear search"><X size={15}/></button>}</label><button className="mobile-menu" onClick={()=>setMobile(v=>!v)} aria-label="Toggle menu"><Menu/></button></div>
-  </header>
-  {searchMode?<main className="page-content"><div className="page-kicker"><Search size={13}/> SEARCH</div><h1>Results for <em>“{query}”</em></h1><p className="page-subtitle">Explore movies and series matching your search.</p><MediaGrid items={results} onOpen={open} saved={saved} onSave={toggleSave}/>{!results.length&&<div className="empty-state">{loading?'Loading titles…':'No matches yet. Try a different title.'}</div>}</main>:
-  page==='mylist'?<main className="page-content"><div className="page-kicker"><Bookmark size={13}/> YOUR COLLECTION</div><h1>My <em>watchlist</em></h1><p className="page-subtitle">A personal shelf of stories you want to remember.</p><MediaGrid items={saved} onOpen={open} saved={saved} onSave={toggleSave}/>{!saved.length&&<div className="empty-state"><Bookmark size={25}/><strong>Your watchlist is empty</strong><span>Save titles as you explore and they’ll appear here.</span><button className="text-action" onClick={()=>setPage('home')}>Explore titles <ArrowUpRight size={14}/></button></div>}</main>:
-  page==='movies'||page==='series'?<main className="page-content"><div className="page-kicker">{page==='movies'?<Film size={13}/>:<Tv size={13}/>} EXPLORE CATALOGUE</div><h1>{page==='movies'?'Movies worth your time':'Series to get lost in'}</h1><p className="page-subtitle">Discover popular picks, audience favourites and hidden gems.</p><MediaGrid items={filteredByPage} onOpen={open} saved={saved} onSave={toggleSave}/></main>:
-  <>
-   <section className="hero" style={heroImage?{backgroundImage:'linear-gradient(90deg,#08090d 0%,rgba(8,9,13,.92) 24%,rgba(8,9,13,.53) 54%,rgba(8,9,13,.12) 100%),linear-gradient(0deg,#08090d 0%,transparent 45%),url('+heroImage+')'}:undefined}>
-    <div className="hero-content"><div className="hero-overline"><span className="live-dot"/> THE MOVCLIP EDITION <span className="overline-line"/></div><div className="hero-kicker"><Sparkles size={13}/> FEATURED THIS WEEK</div><h1>{hero?titleOf(hero):'Find your next favourite story.'}</h1>{hero&&<div className="hero-meta"><span className="rating"><Star size={13} fill="currentColor"/>{ratingOf(hero)}</span><span>{yearOf(hero)||'New release'}</span><span className="meta-pill">{kindOf(hero)==='tv'?'SERIES':'MOVIE'}</span><span className="meta-dot"/> <span>TMDB</span></div>}<p>{hero?.overview||'A better place to discover the films and series you’ll love.'}</p><div className="hero-actions"><button className="primary-btn" onClick={()=>hero&&open(hero)}><CirclePlay size={17}/> Explore title</button><button className="glass-btn" onClick={()=>hero&&toggleSave(hero)}>{hero&&isSaved(hero)?<Check size={16}/>:<Plus size={16}/>} {hero&&isSaved(hero)?'Saved to list':'Add to watchlist'}</button></div></div>
-    <div className="hero-footer"><div className="hero-dots">{heroList.slice(0,6).map((m,i)=><button key={m.id} onClick={()=>setHeroIndex(i)} className={heroIndex===i?'dot-active':''} aria-label={'Show feature '+(i+1)}/>)}</div><button className="shuffle-btn" onClick={()=>setHeroIndex(i=>(i+1)%Math.max(heroList.length,1))}><Sparkles size={14}/> Shuffle selection</button></div>
-   </section>
-   <main className="content" id="discover">
-    <div className="welcome-strip"><div className="welcome-icon"><Compass size={17}/></div><div><strong>Your next great watch starts here.</strong><span>Explore what’s trending, browse by mood, and build your own list.</span></div><span className="welcome-note">CURATED FOR CURIOUS MINDS</span></div>
-    <section className="genre-section"><div className="section-heading"><div><div className="eyebrow">EXPLORE YOUR MOOD</div><h2>What are you in the mood for?</h2></div><span className="section-index">01 / GENRES</span></div><div className="genre-chips">{genres.map(g=><button key={g} className={genre===g?'chip active':'chip'} onClick={()=>setGenre(g)}>{g}</button>)}</div>{genre!=='All'&&<div className="genre-results"><SectionTitle title={genre+' picks'} subtitle="Popular movies in this genre"/><MediaGrid items={genreItems} onOpen={open} saved={saved} onSave={toggleSave}/></div>}</section>
-    {sections.map((s,i)=><MediaSection key={s.path} section={s} items={rows[s.path]||[]} onOpen={open} saved={saved} onSave={toggleSave} register={el=>rowRefs.current[s.path]=el} onNext={()=>jump(s.path)} index={i+2}/>)}
-    <section className="closing-banner"><div><div className="eyebrow"><Flame size={13}/> KEEP EXPLORING</div><h2>There’s always another<br/><em>story to discover.</em></h2><p>Save the titles that catch your eye. Your next favourite is one click away.</p></div><button className="primary-btn" onClick={()=>setPage('mylist')}>View my watchlist <ArrowUpRight size={16}/></button><div className="closing-art"><Clapperboard size={94}/></div></section>
-   </main>
-  </>}
-  {loading&&<div className="loading-pill"><span/> Loading your cinema</div>}{error&&<div className="error-banner">{error} Check your TMDB_API_KEY in Netlify environment variables.</div>}
-  <footer><div className="footer-top"><a className="brand" href="#"><span className="brand-symbol"><Clapperboard size={18}/></span><span>movclip</span><i>.</i></a><span>Stories worth staying in for.</span><button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>Back to top ↑</button></div><div className="footer-bottom"><span>© 2026 MOVCLIP. MADE FOR MOVIE LOVERS.</span><span>Movie & TV metadata provided by TMDB. Movclip is not endorsed or certified by TMDB.</span></div></footer>
-  {active&&<div className="modal-backdrop" onClick={()=>setActive(null)}><div className="detail-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setActive(null)} aria-label="Close"><X/></button>{detail?.backdrop_path?<div className="detail-backdrop" style={{backgroundImage:'linear-gradient(0deg,#101116 0%,transparent 100%),url('+poster(detail.backdrop_path,'w1280')+')'}}/>:<div className="detail-backdrop"/>}<div className="detail-body"><div className="page-kicker">{kindOf(active)==='tv'?'SERIES':'MOVIE'} <span>·</span> {yearOf(detail||active)||'—'} <span>·</span> TMDB</div><h2>{titleOf(detail||active)}</h2>{detail?.tagline&&<p className="detail-tagline">{detail.tagline}</p>}<div className="detail-meta"><span className="rating"><Star size={14} fill="currentColor"/>{ratingOf(detail||active)}</span>{detail?.runtime&&<span>{detail.runtime} min</span>}{detail?.genres?.slice(0,3).map(g=><span key={g.id}>{g.name}</span>)}</div><p>{detail?.overview||active.overview||'Discover more about this title.'}</p><div className="detail-actions"><button className="primary-btn" onClick={()=>toggleSave(active)}>{isSaved(active)?<Check size={16}/>:<Plus size={16}/>} {isSaved(active)?'Saved to watchlist':'Add to watchlist'}</button>{trailer&&<button className="glass-btn" onClick={()=>setTrailerOpen(true)}><Play size={15}/> Watch trailer</button>}</div><div className="detail-note"><Info size={14}/> Movclip helps you discover titles. Availability varies by streaming service and region.</div></div></div></div>}
-  {trailerOpen&&trailer&&<div className="trailer-backdrop" onClick={()=>setTrailerOpen(false)}><div className="trailer-frame" onClick={e=>e.stopPropagation()}><button onClick={()=>setTrailerOpen(false)}><X/></button><iframe src={'https://www.youtube-nocookie.com/embed/'+trailer.key+'?autoplay=1'} title="Official trailer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen/></div></div>}
- </div>
+const tvGenres: Genre[] = [
+  {id:10759,name:'Action & Adventure'},{id:16,name:'Animation'},{id:35,name:'Comedy'},
+  {id:80,name:'Crime'},{id:99,name:'Documentary'},{id:18,name:'Drama'},
+  {id:10765,name:'Sci-Fi & Fantasy'},{id:9648,name:'Mystery'}
+];
+const titleOf = (m: Media) => m.title || m.name || 'Untitled';
+const yearOf = (m: Media) => (m.release_date || m.first_air_date || '').slice(0,4);
+const kindOf = (m: Media): 'movie' | 'tv' => m.media_type === 'tv' || (!m.media_type && !!m.name) ? 'tv' : 'movie';
+const ratingOf = (m: Media) => Number(m.vote_average || 0).toFixed(1);
+const image = (path: string | null | undefined, size = 'w500') => path ? IMG + size + path : '';
+const readSaved = (): Media[] => {
+  try { const v = JSON.parse(localStorage.getItem('movclip-watchlist') || '[]'); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+};
+const sections = [
+  { id:'trending/all/week', title:'Trending this week', note:'The stories everyone is talking about', eyebrow:'IN THE SPOTLIGHT' },
+  { id:'movie/popular', title:'Popular movies', note:'Big-screen stories worth your time', eyebrow:'MOVIE NIGHT' },
+  { id:'tv/popular', title:'Popular series', note:'Your next weekend obsession', eyebrow:'BINGE-WORTHY' },
+  { id:'movie/top_rated', title:'Top rated movies', note:'The highest-rated stories in the collection', eyebrow:'THE HALL OF FAME' },
+  { id:'tv/top_rated', title:'Critically loved series', note:'Exceptional stories, episode after episode', eyebrow:'SERIES SELECTS' },
+  { id:'movie/upcoming', title:'Coming soon', note:'A first look at what is on the horizon', eyebrow:'ON THE HORIZON' }
+];
+async function getTitles(path: string, params = '') {
+  const data = await discover(path, params);
+  return (data.results || []) as Media[];
 }
-function SectionTitle({title,subtitle}:{title:string;subtitle:string}){return <div className="section-heading"><div><div className="eyebrow">MOVCLIP COLLECTION</div><h2>{title}</h2><p>{subtitle}</p></div></div>}
-function MediaSection({section,items,onOpen,saved,onSave,register,onNext,index}:{section:Section;items:Media[];onOpen:(m:Media)=>void;saved:Media[];onSave:(m:Media)=>void;register:(el:HTMLDivElement|null)=>void;onNext:()=>void;index:number}){return <section className="media-section"><div className="section-heading"><div><div className="eyebrow">{section.kind==='tv'?'SERIES SPOTLIGHT':section.kind==='movie'?'MOVIE SPOTLIGHT':'THE MOST TALKED ABOUT'}</div><h2>{section.title}</h2><p>{section.subtitle}</p></div><div className="row-controls"><span>{String(index).padStart(2,'0')} / 07</span><button onClick={onNext} aria-label={'Scroll '+section.title}><ChevronRight size={17}/></button></div></div><div className="horizontal-row" ref={register}>{items.slice(0,20).map((m,i)=><article className="poster-card" key={m.id+'-'+i}><button className="poster-hit" onClick={()=>onOpen(m)} aria-label={'View '+titleOf(m)}>{m.poster_path?<img src={poster(m.poster_path)} alt={titleOf(m)} loading="lazy"/>:<div className="poster-fallback"><Clapperboard/></div>}<span className="poster-overlay"><span className="play-circle"><Play size={17} fill="currentColor"/></span><span>View details</span></span></button><button className={saved.some(x=>x.id===m.id)?'save-btn saved':'save-btn'} onClick={()=>onSave(m)} aria-label="Toggle watchlist">{saved.some(x=>x.id===m.id)?<Check size={15}/>:<Plus size={15}/>}</button><div className="poster-info"><strong>{titleOf(m)}</strong><span><span className="rating-mini"><Star size={10} fill="currentColor"/>{Number(m.vote_average||0).toFixed(1)}</span>{yearOf(m)||'—'} <i/> {kindOf(m)==='tv'?'Series':'Movie'}</span></div></article>)}</div></section>}
-function MediaGrid({items,onOpen,saved,onSave}:{items:Media[];onOpen:(m:Media)=>void;saved:Media[];onSave:(m:Media)=>void}){return <div className="poster-grid">{items.map((m,i)=><article className="poster-card" key={m.id+'-'+i}><button className="poster-hit" onClick={()=>onOpen(m)} aria-label={'View '+titleOf(m)}>{m.poster_path?<img src={poster(m.poster_path)} alt={titleOf(m)} loading="lazy"/>:<div className="poster-fallback"><Clapperboard size={27}/></div>}<span className="poster-overlay"><span className="play-circle"><Play size={17} fill="currentColor"/></span><span>View details</span></span></button><button className={saved.some(x=>x.id===m.id)?'save-btn saved':'save-btn'} onClick={()=>onSave(m)} aria-label="Toggle watchlist">{saved.some(x=>x.id===m.id)?<Check size={15}/>:<Plus size={15}/>}</button><div className="poster-info"><strong>{titleOf(m)}</strong><span><span className="rating-mini"><Star size={10} fill="currentColor"/>{ratingOf(m)}</span>{yearOf(m)||'—'} <i/> {kindOf(m)==='tv'?'Series':'Movie'}</span></div></article>)}</div>}
+function App() {
+  const [page,setPage] = useState<Page>('home');
+  const [mobileOpen,setMobileOpen] = useState(false);
+  const [rows,setRows] = useState<Record<string,Media[]>>({});
+  const [heroItems,setHeroItems] = useState<Media[]>([]);
+  const [heroIndex,setHeroIndex] = useState(0);
+  const [saved,setSaved] = useState<Media[]>(readSaved);
+  const [query,setQuery] = useState('');
+  const [searchResults,setSearchResults] = useState<Media[]>([]);
+  const [searchLoading,setSearchLoading] = useState(false);
+  const [loading,setLoading] = useState(true);
+  const [error,setError] = useState('');
+  const [genre,setGenre] = useState<number | null>(null);
+  const [genreName,setGenreName] = useState('');
+  const [catalogue,setCatalogue] = useState<Media[]>([]);
+  const [cataloguePage,setCataloguePage] = useState(1);
+  const [catalogueLoading,setCatalogueLoading] = useState(false);
+  const [sort,setSort] = useState('popularity.desc');
+  const [active,setActive] = useState<Media | null>(null);
+  const [detail,setDetail] = useState<Detail | null>(null);
+  const [detailLoading,setDetailLoading] = useState(false);
+  const [trailerOpen,setTrailerOpen] = useState(false);
+  const [toast,setToast] = useState('');
+  const rowRefs = useRef<Record<string,HTMLDivElement | null>>({});
+  const hero = heroItems[heroIndex] || null;
+  const searchMode = query.trim().length >= 2;
+  const currentGenres = page === 'series' ? tvGenres : movieGenres;
+  const visibleSaved = saved;
+
+  useEffect(() => {
+    let live = true;
+    Promise.all(sections.map(async s => [s.id, await getTitles(s.id)] as const))
+      .then(entries => {
+        if (!live) return;
+        const next = Object.fromEntries(entries) as Record<string,Media[]>;
+        setRows(next);
+        const picks = (next['trending/all/week'] || []).filter(m => m.backdrop_path && m.overview);
+        setHeroItems(picks.slice(0,10));
+        setError('');
+      })
+      .catch(e => { if (live) setError(e?.message || 'Could not connect to the movie catalogue.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => { localStorage.setItem('movclip-watchlist',JSON.stringify(saved)); },[saved]);
+  useEffect(() => {
+    if (heroItems.length < 2) return;
+    const timer = window.setInterval(() => setHeroIndex(i => (i + 1) % heroItems.length), 8500);
+    return () => window.clearInterval(timer);
+  },[heroItems.length]);
+  useEffect(() => {
+    let live = true;
+    if (!searchMode) { setSearchResults([]); setSearchLoading(false); return () => { live = false; }; }
+    setSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      discover('search/multi','&query=' + encodeURIComponent(query.trim()))
+        .then(d => { if (live) setSearchResults((d.results || []).filter((m:Media) => m.poster_path && (m.media_type === 'movie' || m.media_type === 'tv'))); })
+        .catch(() => { if (live) setSearchResults([]); })
+        .finally(() => { if (live) setSearchLoading(false); });
+    },350);
+    return () => { live = false; window.clearTimeout(timer); };
+  },[query,searchMode]);
+  useEffect(() => {
+    if (page !== 'movies' && page !== 'series') return;
+    let live = true;
+    setCatalogueLoading(true);
+    const type = page === 'movies' ? 'movie' : 'tv';
+    const params = '&page=' + cataloguePage + '&sort_by=' + sort + (genre ? '&with_genres=' + genre : '');
+    discover('discover/' + type,params)
+      .then(d => { if (live) setCatalogue(d.results || []); })
+      .catch(() => { if (live) setCatalogue([]); })
+      .finally(() => { if (live) setCatalogueLoading(false); });
+    return () => { live = false; };
+  },[page,cataloguePage,genre,sort]);
+
+  useEffect(() => {
+    let live = true;
+    if (!active) { setDetail(null); setDetailLoading(false); setTrailerOpen(false); return () => { live = false; }; }
+    setDetailLoading(true);
+    setDetail(null);
+    const type = kindOf(active);
+    Promise.all([
+      discover(type + '/' + active.id),
+      discover(type + '/' + active.id + '/videos'),
+      discover(type + '/' + active.id + '/recommendations'),
+      discover(type + '/' + active.id + '/credits')
+    ]).then(([d,v,r,c]) => {
+      if (live) setDetail({...active,...d,videos:v,recommendations:r,credits:c});
+    }).catch(() => { if (live) setDetail(active); })
+      .finally(() => { if (live) setDetailLoading(false); });
+    return () => { live = false; };
+  },[active]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(''),2200);
+    return () => window.clearTimeout(id);
+  },[toast]);
+
+  const isSaved = (m:Media) => saved.some(x => x.id === m.id && kindOf(x) === kindOf(m));
+  const toggleSave = (m:Media) => {
+    const exists = isSaved(m);
+    setSaved(list => exists ? list.filter(x => !(x.id === m.id && kindOf(x) === kindOf(m))) : [m,...list]);
+    setToast(exists ? 'Removed from your watchlist' : 'Added to your watchlist');
+  };
+  const openTitle = (m:Media) => { setActive(m); setTrailerOpen(false); };
+  const changePage = (next:Page) => {
+    setPage(next); setQuery(''); setGenre(null); setGenreName(''); setCataloguePage(1); setMobileOpen(false);
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+  const chooseGenre = (g:Genre) => {
+    setGenre(g.id); setGenreName(g.name); setCataloguePage(1);
+    if (page === 'home') setPage('movies');
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+  const heroImage = image(hero?.backdrop_path,'original');
+  const trailer = detail?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer')
+    || detail?.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Teaser');
+  const titlePage = page === 'movies' ? 'Movies' : page === 'series' ? 'Series' : 'My watchlist';
+  const pageItems = page === 'watchlist' ? visibleSaved : catalogue;
+  const pageTitle = genreName ? genreName + ' films' : page === 'movies' ? 'Discover movies' : page === 'series' ? 'Discover series' : 'Your saved collection';
+
+  return <div className="app">
+    <header className="site-header">
+      <a className="wordmark" href="#" onClick={e => {e.preventDefault();changePage('home');}}>
+        <span className="wordmark-icon"><Clapperboard size={18}/></span><span>movclip</span><b>®</b>
+      </a>
+      <nav className={mobileOpen ? 'main-nav nav-open' : 'main-nav'} aria-label="Main navigation">
+        <button className={page === 'home' && !searchMode ? 'active' : ''} onClick={() => changePage('home')}>Discover</button>
+        <button className={page === 'movies' ? 'active' : ''} onClick={() => changePage('movies')}>Movies</button>
+        <button className={page === 'series' ? 'active' : ''} onClick={() => changePage('series')}>Series</button>
+        <button className={page === 'watchlist' ? 'active' : ''} onClick={() => changePage('watchlist')}>My list <span className="nav-badge">{saved.length}</span></button>
+      </nav>
+      <div className="header-right">
+        <label className="search-field"><Search size={16}/><input value={query} onChange={e => {setQuery(e.target.value);setMobileOpen(false);}} placeholder="Search any title..." aria-label="Search movies and series"/>{query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}<kbd>⌘ K</kbd></label>
+        <button className="mobile-toggle" onClick={() => setMobileOpen(v => !v)} aria-label="Toggle navigation">{mobileOpen ? <X/> : <Menu/>}</button>
+      </div>
+    </header>
+
+    {searchMode ? <main className="catalogue-page">
+      <div className="page-topline"><span><Search size={13}/> SEARCH RESULTS</span><span>{searchLoading ? 'Searching…' : searchResults.length + ' TITLES'}</span></div>
+      <h1>Find your <em>next favourite.</em></h1><p className="page-lead">Showing movie and series matches for “{query.trim()}”.</p>
+      {searchLoading ? <SkeletonGrid/> : searchResults.length ? <MediaGrid items={searchResults} saved={saved} onOpen={openTitle} onSave={toggleSave}/> : <EmptyState title="No titles found" text="Try a different title, actor or keyword."/>}
+    </main> : page === 'home' ? <>
+      <section className="hero" style={heroImage ? {backgroundImage:'linear-gradient(90deg,#08090d 0%,rgba(8,9,13,.92) 25%,rgba(8,9,13,.62) 54%,rgba(8,9,13,.13) 100%),linear-gradient(0deg,#08090d 0%,transparent 50%),url('+heroImage+')'} : undefined}>
+        <div className="hero-grain"/>
+        <div className="hero-inner">
+          <div className="hero-label"><span className="label-mark"><Sparkles size={12}/></span> THE MOVCLIP SPOTLIGHT <i/></div>
+          <div className="hero-copy">
+            <div className="hero-overline"><span className="gold-dot"/> FEATURED DISCOVERY <span className="hero-divider"/> {hero ? (kindOf(hero) === 'tv' ? 'SERIES' : 'FILM') : 'YOUR NEXT WATCH'}</div>
+            <h1>{hero ? titleOf(hero) : 'Stories worth staying in for.'}</h1>
+            {hero && <div className="hero-facts"><span className="hero-rating"><Star size={13} fill="currentColor"/>{ratingOf(hero)}</span><span>{yearOf(hero) || 'New'}</span><span className="fact-separator"/><span>{kindOf(hero) === 'tv' ? 'TV SERIES' : 'FEATURE FILM'}</span><span className="fact-separator"/><span>TMDB</span></div>}
+            <p>{hero?.overview || 'A considered collection of films and series for your next great watch.'}</p>
+            <div className="hero-buttons"><button className="btn-primary" onClick={() => hero && openTitle(hero)}><Play size={15} fill="currentColor"/> Explore title <ArrowRight size={15}/></button><button className="btn-quiet" onClick={() => hero && toggleSave(hero)}>{hero && isSaved(hero) ? <Check size={16}/> : <Plus size={16}/>} {hero && isSaved(hero) ? 'In your list' : 'Add to watchlist'}</button></div>
+          </div>
+        </div>
+        <div className="hero-bottom"><div className="hero-pagination"><span>{String(heroIndex + 1).padStart(2,'0')}</span><div className="hero-progress"><i style={{width: ((heroIndex + 1) / Math.max(heroItems.length,1) * 100) + '%'}}/></div><span>{String(Math.max(heroItems.length,1)).padStart(2,'0')}</span></div><div className="hero-controls"><button onClick={() => setHeroIndex(i => (i - 1 + heroItems.length) % Math.max(heroItems.length,1))} aria-label="Previous featured title"><ChevronLeft size={17}/></button><button onClick={() => setHeroIndex(i => (i + 1) % Math.max(heroItems.length,1))} aria-label="Next featured title"><ChevronRight size={17}/></button></div><span className="hero-credit">FEATURED FROM TMDB</span></div>
+      </section>
+
+      <main className="home-content">
+        <div className="intro-row"><div><span className="eyebrow"><Compass size={13}/> YOUR CINEMA COMPANION</span><h2>Good stories.<br/><em>Great discoveries.</em></h2></div><p>Browse the latest buzz, timeless favourites and new worlds to get lost in. Save the titles you love and build a watchlist of your own.</p></div>
+        <section className="genre-discovery"><div className="section-head"><div><span className="eyebrow">BROWSE BY GENRE</span><h3>Set the mood.</h3></div><button className="text-link" onClick={() => changePage('movies')}>Explore catalogue <ArrowRight size={14}/></button></div><div className="genre-tiles">
+          {[
+            {name:'Action',id:28,sub:'High stakes, fast pace',symbol:'01'},
+            {name:'Thriller',id:53,sub:'Keep guessing',symbol:'02'},
+            {name:'Sci-Fi',id:878,sub:'Beyond the ordinary',symbol:'03'},
+            {name:'Horror',id:27,sub:'For the brave',symbol:'04'},
+            {name:'Drama',id:18,sub:'Stories that stay',symbol:'05'}
+          ].map(g => <button className="genre-tile" key={g.id} onClick={() => chooseGenre({id:g.id,name:g.name})}><span>{g.symbol}</span><strong>{g.name}</strong><small>{g.sub}</small><ArrowUpRightIcon/></button>)}
+        </div></section>
+        {sections.map((s,i) => <MediaSection key={s.id} section={s} items={rows[s.id] || []} index={i+1} saved={saved} onSave={toggleSave} onOpen={openTitle} register={el => {rowRefs.current[s.id] = el;}} onNext={() => rowRefs.current[s.id]?.scrollBy({left:600,behavior:'smooth'})} onPrev={() => rowRefs.current[s.id]?.scrollBy({left:-600,behavior:'smooth'})}/>)}
+        <section className="watchlist-promo"><div className="promo-icon"><Bookmark size={20}/></div><div><span className="eyebrow">MAKE IT YOURS</span><h3>Your own little corner of cinema.</h3><p>Keep the films and series you want to come back to, all in one place.</p></div><button className="btn-primary" onClick={() => changePage('watchlist')}>Open my list <ArrowRight size={15}/></button><div className="promo-watermark"><Clapperboard size={120}/></div></section>
+      </main>
+    </> : <main className="catalogue-page">
+      <div className="page-topline"><span>{page === 'watchlist' ? <><Bookmark size={13}/> YOUR COLLECTION</> : page === 'movies' ? <><Film size={13}/> MOVIE LIBRARY</> : <><Tv size={13}/> SERIES LIBRARY</>}</span><span>{page === 'watchlist' ? saved.length + ' SAVED' : 'DISCOVER SOMETHING NEW'}</span></div>
+      <div className="catalogue-heading"><div><h1>{page === 'watchlist' ? <>Your <em>watchlist.</em></> : <>{pageTitle.split(' ')[0]} <em>{pageTitle.split(' ').slice(1).join(' ')}</em></>}</h1><p className="page-lead">{page === 'watchlist' ? 'All the stories you have saved, ready when you are.' : 'A world of stories, carefully organised for your next discovery.'}</p></div>
+      {page !== 'watchlist' && <label className="sort-select"><SlidersHorizontal size={14}/><select value={sort} onChange={e => {setSort(e.target.value);setCataloguePage(1);}}><option value="popularity.desc">Most popular</option><option value="vote_average.desc">Top rated</option><option value="primary_release_date.desc">Newest first</option><option value="primary_release_date.asc">Oldest first</option></select><ChevronDown size={13}/></label>}</div>
+      {page !== 'watchlist' && <div className="filter-line"><span><Filter size={13}/> FILTER BY GENRE</span><div className="filter-chips"><button className={!genre ? 'selected' : ''} onClick={() => {setGenre(null);setGenreName('');setCataloguePage(1);}}>All</button>{currentGenres.map(g => <button key={g.id} className={genre === g.id ? 'selected' : ''} onClick={() => {setGenre(genre === g.id ? null : g.id);setGenreName(genre === g.id ? '' : g.name);setCataloguePage(1);}}>{g.name}</button>)}</div></div>}
+      {page === 'watchlist' ? saved.length ? <MediaGrid items={saved} saved={saved} onOpen={openTitle} onSave={toggleSave}/> : <EmptyState title="Your list is waiting" text="Tap the bookmark on any movie or series to save it here." action={() => changePage('home')}/> : catalogueLoading ? <SkeletonGrid/> : catalogue.length ? <MediaGrid items={pageItems} saved={saved} onOpen={openTitle} onSave={toggleSave}/> : <EmptyState title="Nothing to show yet" text="Try another genre or sort option."/>}
+      {page !== 'watchlist' && <div className="pagination"><button disabled={cataloguePage <= 1} onClick={() => {setCataloguePage(p => Math.max(1,p-1));window.scrollTo({top:0,behavior:'smooth'});}}><ArrowLeft size={15}/> Previous</button><span>PAGE <b>{cataloguePage}</b> <i/> 500</span><button onClick={() => {setCataloguePage(p => p+1);window.scrollTo({top:0,behavior:'smooth'});}}>Next <ArrowRight size={15}/></button></div>}
+    </main>}
+
+    <footer className="site-footer"><div className="footer-main"><a className="wordmark" href="#" onClick={e => {e.preventDefault();changePage('home');}}><span className="wordmark-icon"><Clapperboard size={17}/></span><span>movclip</span><b>®</b></a><p>Discover stories. Find your next favourite.</p><button onClick={() => window.scrollTo({top:0,behavior:'smooth'})}>Back to top <ArrowDown size={13}/></button></div><div className="footer-legal"><span>© 2026 MOVCLIP</span><span>Movie and TV data provided by TMDB. Movclip is not endorsed or certified by TMDB.</span><span>BUILT FOR THE LOVE OF STORIES</span></div></footer>
+
+    {loading && <div className="loading-indicator"><i/> Loading the catalogue</div>}
+    {error && <div className="error-message"><Info size={15}/>{error} Please check the TMDB_API_KEY environment variable in Netlify.</div>}
+    {toast && <div className="toast"><Check size={15}/>{toast}</div>}
+
+    {active && <div className="modal-scrim" onClick={() => setActive(null)}><section className="detail-panel" role="dialog" aria-modal="true" aria-label={titleOf(detail || active)} onClick={e => e.stopPropagation()}>
+      <button className="detail-close" onClick={() => setActive(null)} aria-label="Close details"><X size={19}/></button>
+      <div className="detail-cover" style={detail?.backdrop_path ? {backgroundImage:'linear-gradient(0deg,#101116 0%,rgba(16,17,22,.08) 85%),url('+image(detail.backdrop_path,'w1280')+')'} : undefined}><span className="cover-chip">{kindOf(active) === 'tv' ? 'SERIES' : 'FILM'} <i/> TMDB</span></div>
+      <div className="detail-content"><div className="detail-overline"><span className="eyebrow">TITLE OVERVIEW</span><span className="detail-year">{yearOf(detail || active) || '—'}</span></div><h2>{titleOf(detail || active)}</h2>{detail?.tagline && <p className="detail-tagline">{detail.tagline}</p>}<div className="detail-stats"><span className="hero-rating"><Star size={14} fill="currentColor"/>{ratingOf(detail || active)}</span>{detail?.runtime ? <span>{detail.runtime} min</span> : detail?.episode_run_time?.[0] ? <span>{detail.episode_run_time[0]} min / ep</span> : null}<span>{kindOf(active) === 'tv' ? 'TV series' : 'Movie'}</span>{detail?.genres?.slice(0,3).map(g => <span key={g.id}>{g.name}</span>)}</div><p className="detail-overview">{detail?.overview || active.overview || 'A story waiting to be discovered.'}</p>
+        <div className="detail-actions"><button className="btn-primary" onClick={() => toggleSave(active)}>{isSaved(active) ? <Check size={16}/> : <Plus size={16}/>} {isSaved(active) ? 'Saved to my list' : 'Add to my list'}</button>{trailer && <button className="btn-quiet" onClick={() => setTrailerOpen(true)}><Play size={15} fill="currentColor"/> Watch trailer</button>}</div>
+        {detailLoading && <div className="detail-loading">Loading title details…</div>}
+        {detail?.credits?.cast?.length ? <div className="cast-section"><span className="eyebrow">THE CAST</span><div className="cast-list">{detail.credits.cast.slice(0,6).map(person => <div className="cast-person" key={person.id}>{person.profile_path ? <img src={image(person.profile_path,'w185')} alt=""/> : <span className="cast-placeholder"/>}<strong>{person.name}</strong><small>{person.character}</small></div>)}</div></div> : null}
+        {detail?.recommendations?.results?.length ? <div className="recommend-section"><span className="eyebrow">YOU MAY ALSO LIKE</span><div className="recommend-row">{detail.recommendations.results.slice(0,5).map(m => <button key={m.id} onClick={() => openTitle(m)}>{m.poster_path && <img src={image(m.poster_path,'w185')} alt=""/>}<span>{titleOf(m)}</span></button>)}</div></div> : null}
+        <div className="detail-disclaimer"><Info size={14}/> Movclip is a discovery catalogue. Streaming availability depends on your region and subscriptions.</div>
+      </div>
+    </section></div>}
+    {trailerOpen && trailer && <div className="trailer-scrim" onClick={() => setTrailerOpen(false)}><div className="trailer-window" onClick={e => e.stopPropagation()}><button onClick={() => setTrailerOpen(false)} aria-label="Close trailer"><X/></button><iframe src={'https://www.youtube-nocookie.com/embed/'+trailer.key+'?autoplay=1'} title="Official trailer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen/></div></div>}
+  </div>;
+}
+function ArrowUpRightIcon() { return <ArrowRight size={15}/>; }
+function MediaSection({section,items,index,saved,onSave,onOpen,register,onNext,onPrev}:{section:{id:string;title:string;note:string;eyebrow:string};items:Media[];index:number;saved:Media[];onSave:(m:Media)=>void;onOpen:(m:Media)=>void;register:(el:HTMLDivElement|null)=>void;onNext:()=>void;onPrev:()=>void}) {
+  return <section className="media-section"><div className="section-heading"><div><span className="eyebrow">{section.eyebrow}</span><h3>{section.title}</h3><p>{section.note}</p></div><div className="row-navigation"><span>{String(index).padStart(2,'0')} / 06</span><button onClick={onPrev} aria-label={'Previous '+section.title}><ChevronLeft size={17}/></button><button onClick={onNext} aria-label={'Next '+section.title}><ChevronRight size={17}/></button></div></div>{items.length ? <div className="poster-row" ref={register}>{items.slice(0,18).map(m => <PosterCard key={kindOf(m)+'-'+m.id} item={m} saved={saved.some(x => x.id === m.id && kindOf(x) === kindOf(m))} onOpen={() => onOpen(m)} onSave={() => onSave(m)}/>)}</div> : <div className="row-skeleton"><span/><span/><span/><span/><span/></div>}</section>;
+}
+function PosterCard({item,saved,onOpen,onSave}:{item:Media;saved:boolean;onOpen:()=>void;onSave:()=>void}) {
+  return <article className="poster-card"><button className="poster-image" onClick={onOpen} aria-label={'Open '+titleOf(item)}>{item.poster_path ? <img src={image(item.poster_path)} alt={titleOf(item)} loading="lazy"/> : <span className="poster-empty"><Clapperboard size={25}/></span>}<span className="poster-hover"><span><Play size={16} fill="currentColor"/></span> View details</span></button><button className={saved ? 'poster-save is-saved' : 'poster-save'} onClick={onSave} aria-label={saved ? 'Remove from watchlist' : 'Add to watchlist'}>{saved ? <Check size={14}/> : <Plus size={14}/>}</button><div className="poster-caption"><strong>{titleOf(item)}</strong><span><i><Star size={10} fill="currentColor"/>{ratingOf(item)}</i>{yearOf(item) || '—'}<b/> {kindOf(item) === 'tv' ? 'Series' : 'Film'}</span></div></article>;
+}
+function MediaGrid({items,saved,onOpen,onSave}:{items:Media[];saved:Media[];onOpen:(m:Media)=>void;onSave:(m:Media)=>void}) {
+  return <div className="media-grid">{items.map(m => <PosterCard key={kindOf(m)+'-'+m.id} item={m} saved={saved.some(x => x.id === m.id && kindOf(x) === kindOf(m))} onOpen={() => onOpen(m)} onSave={() => onSave(m)}/>)}</div>;
+}
+function SkeletonGrid() { return <div className="media-grid">{Array.from({length:12},(_,i) => <div className="skeleton-card" key={i}><span/><i/><b/></div>)}</div>; }
+function EmptyState({title,text,action}:{title:string;text:string;action?:()=>void}) { return <div className="empty-state"><span><Bookmark size={24}/></span><h3>{title}</h3><p>{text}</p>{action && <button className="btn-primary" onClick={action}>Explore titles <ArrowRight size={14}/></button>}</div>; }
 export default App;
