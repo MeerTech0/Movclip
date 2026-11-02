@@ -120,7 +120,8 @@ function App() {
     let live = true;
     setCatalogueLoading(true);
     const type = page === 'movies' ? 'movie' : 'tv';
-    const params = '&page=' + cataloguePage + '&sort_by=' + sort + (genre ? '&with_genres=' + genre : '');
+    const sortField = page === 'series' ? sort.replace('primary_release_date','first_air_date') : sort;
+    const params = '&page=' + cataloguePage + '&sort_by=' + sortField + (genre ? '&with_genres=' + genre : '');
     discover('discover/' + type,params)
       .then(d => { if (live) setCatalogue(d.results || []); })
       .catch(() => { if (live) setCatalogue([]); })
