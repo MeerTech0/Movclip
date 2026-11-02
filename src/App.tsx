@@ -75,6 +75,7 @@ function App() {
   const [trailerOpen,setTrailerOpen] = useState(false);
   const [toast,setToast] = useState('');
   const rowRefs = useRef<Record<string,HTMLDivElement | null>>({});
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const hero = heroItems[heroIndex] || null;
   const searchMode = query.trim().length >= 2;
   const currentGenres = page === 'series' ? tvGenres : movieGenres;
@@ -186,7 +187,7 @@ function App() {
         <button className={page === 'watchlist' ? 'active' : ''} onClick={() => changePage('watchlist')}>My list <span className="nav-badge">{saved.length}</span></button>
       </nav>
       <div className="header-right">
-        <label className="search-field"><Search size={16}/><input value={query} onChange={e => {setQuery(e.target.value);setMobileOpen(false);}} placeholder="Search any title..." aria-label="Search movies and series"/>{query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}<kbd>⌘ K</kbd></label>
+        <label className="search-field"><Search size={16}/><input ref={searchInputRef} value={query} onChange={e => {setQuery(e.target.value);setMobileOpen(false);}} placeholder="Search any title..." aria-label="Search movies and series"/>{query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}<kbd>⌘ K</kbd></label>
         <button className="mobile-toggle" onClick={() => setMobileOpen(v => !v)} aria-label="Toggle navigation">{mobileOpen ? <X/> : <Menu/>}</button>
       </div>
     </header>
